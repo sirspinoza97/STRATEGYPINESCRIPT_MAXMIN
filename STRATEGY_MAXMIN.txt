@@ -1,0 +1,101 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ifespinosap
+//@version=5
+strategy("Estrategia MAX_MIN", overlay = true, max_labels_count=500, initial_capital=100, currency = currency.USDT, default_qty_type=strategy.percent_of_equity, default_qty_value=20)
+//Variables used
+rsi_period = input(14, "Período RSI")
+stoch_period = input(14, "Longitud Stoch")
+stoch_up = input(70, "Stoch sobrecomprado")
+stoch_down = input(30, "Stoch sobrevendido")
+leftBars  = input(30, title = "Left Bars ")
+rightBars  = input(30, title = "Right Bars")
+SLoss = input(0.01, "Stop Loss")
+smoothK = 3
+smoothD = 3
+//Stochastic calculation
+kx = ta.sma(ta.stoch(close[0], high[0], low[0], stoch_period), smoothK)
+dx = ta.sma(kx, smoothD)
+ky = ta.sma(ta.stoch(close[1], high[1], low[1], stoch_period), smoothK)
+dy = ta.sma(ky, smoothD)
+//RSI calculation
+float RSIx = math.round(ta.rsi(close[0],rsi_period))
+float RSIy = math.round(ta.rsi(close[1],rsi_period))
+//Other variables
+var confmax = 0
+var confmin = 0
+var minimum = array.new_float(0)
+var maximum = array.new_float(0)
+var len_min = 0
+var len_max = 0
+var float fibo_1 = 0
+var float fibo_2 = 0
+var float diflong = 0
+var float difshort = 0
+var float SL_BUY = 0
+var float SL_SELL = 0
+//Maximum and minimum determination
+highpivot = ta.pivothigh(leftBars, rightBars)
+lowpivot = ta.pivotlow(leftBars, rightBars)
+//Maximum
+if not na(highpivot)
+    confmin := 0
+    confmax := 1
+    array.push(maximum,high[rightBars])
+    len_max := array.size(maximum)
+    l = label.new(bar_index[rightBars], highpivot,str.tostring(highpivot, format.mintick))
+    label.set_color(l, color.green)
+    label.set_style(l, label.style_label_down)
+//Minimum
+if not na(lowpivot)
+    confmax := 0
+    confmin := 1
+    array.push(minimum,low[rightBars])
+    len_min := array.size(minimum)
+    p = label.new(bar_index[leftBars], lowpivot,str.tostring(lowpivot, format.mintick))
+    label.set_color(p, color.red)
+    label.set_style(p, label.style_label_up)
+//Trend determination
+//Longs
+if(len_max>=2 and len_min>=1)
+    if(array.get(maximum,len_max-1)>array.get(maximum,len_max-2) and confmin==0)
+        fibo_1 := array.get(minimum,len_min-1)+(array.get(maximum,len_max-1)-array.get(minimum,len_min-1))*(1-0.382)
+        fibo_2 := array.get(minimum,len_min-1)+(array.get(maximum,len_max-1)-array.get(minimum,len_min-1))*(1-0.618)
+        if(close<=fibo_1 and close>=fibo_2)
+            if(kx>ky or dx>dy)
+                if(kx<stoch_down or dx<stoch_down)
+                    if (RSIx>=(RSIy) and strategy.position_size==0)
+                        diflong := (close-array.get(minimum,len_min-1))/(array.get(minimum,len_min-1))
+                        if(diflong<0.01)
+                            SL_SELL := (1-SLoss)*close
+                        if(diflong>=0.01 and diflong<0.025)
+                            SL_SELL := (1-diflong)*close
+                        if(diflong>=0.025)
+                            SL_SELL := 0.975*close
+                        strategy.entry("buy", strategy.long)
+                        strategy.exit("Exit Long", from_entry="buy",stop=SL_SELL,limit=array.get(maximum,len_max-1))
+if (kx>stoch_up or dx>stoch_up)
+    if(kx<ky or dx<dy)
+        if(RSIx>=60 and strategy.position_size>0)
+            strategy.close("buy")
+//Shorts
+if(len_min>=2 and len_max>=1)
+    if(array.get(minimum,len_min-1)<array.get(minimum,len_min-2) and confmax==0)
+        fibo_1 := array.get(maximum,len_max-1)+(array.get(minimum,len_min-1)-array.get(maximum,len_max-1))*(1-0.382)
+        fibo_2 := array.get(maximum,len_max-1)+(array.get(minimum,len_min-1)-array.get(maximum,len_max-1))*(1-0.618)        
+        if(close<=fibo_2 and close>=fibo_1)
+            if(kx<ky or dx<dy)
+                if(kx>stoch_up or dx>stoch_up)
+                    if (RSIx<=(RSIy) and strategy.position_size==0) 
+                        difshort := (array.get(maximum,len_max-1)-close)/(array.get(maximum,len_max-1))
+                        if(difshort<0.01)
+                            SL_BUY := (1+SLoss)*close
+                        if(difshort>=0.01 and difshort<0.025)
+                            SL_BUY := (1+difshort)*close
+                        if(diflong>=0.025)
+                            SL_BUY := 1.025*close
+                        strategy.entry("sell", strategy.short)
+                        strategy.exit("Exit Short", from_entry="sell",stop=SL_BUY,limit=array.get(minimum,len_min-1))
+if (kx<stoch_down or dx<stoch_down)
+    if(kx>ky or dx>dy)
+        if(RSIx<=40 and strategy.position_size<0)
+            strategy.close("sell")
